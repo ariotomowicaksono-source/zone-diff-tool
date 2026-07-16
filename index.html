@@ -734,8 +734,13 @@ document.getElementById('runBtn').onclick = async () => {
       await new Promise(r => setTimeout(r));      // keep UI responsive
       try {
         const { metrics, matches } = compareHub(pairs[i].cur.zones, pairs[i].neu.zones);
-        const size = zoneSizeStats(pairs[i].cur.zones, pairs[i].cur.centroid[1]);   // current active driver zones
-        summary.push({ station_name: pairs[i].name, matched_by: pairs[i].how, pairIdx: i, ...metrics, ...size });
+        const cs = zoneSizeStats(pairs[i].cur.zones, pairs[i].cur.centroid[1]);   // current active driver zones
+        const ns = zoneSizeStats(pairs[i].neu.zones, pairs[i].neu.centroid[1]);   // new generated zones
+        summary.push({
+          station_name: pairs[i].name, matched_by: pairs[i].how, pairIdx: i, ...metrics,
+          cur_avg_zone_km2: cs.avg_zone_km2, cur_min_zone_km2: cs.min_zone_km2, cur_max_zone_km2: cs.max_zone_km2,
+          new_avg_zone_km2: ns.avg_zone_km2, new_min_zone_km2: ns.min_zone_km2, new_max_zone_km2: ns.max_zone_km2,
+        });
         matches.forEach(x => allMatches.push({ station_name: pairs[i].name, ...x }));
       } catch (e) {
         skipped.push({ station: pairs[i].name, reason: String(e.message || e) });
@@ -772,7 +777,8 @@ document.getElementById('runBtn').onclick = async () => {
       ['Area keeping its zone', 'Share of the delivery area that stays with its best-matching zone. E.g. 85% means only 15% of the ground moves to a different zone.'],
       ['Zones', 'Number of zones: current → new'],
       ['Coverage match', 'How much the overall service-area footprint overlaps between the two versions. Below 100% means the new zoning covers different ground.'],
-      ['Driver-zone size km²', 'Average, then smallest–largest, area of this hub\'s current active driver zones (km²).'],
+      ['Current zone size km²', 'Average, then smallest–largest, area of this hub\'s CURRENT active driver zones (km²).'],
+      ['New zone size km²', 'Average, then smallest–largest, area of this hub\'s NEW generated zones (km²).'],
       ['Map', ''],
     ];
     const tbl = document.createElement('table');
@@ -788,7 +794,8 @@ document.getElementById('runBtn').onclick = async () => {
           <td class="num">${r.pct_area_keeping_zone}%</td>
           <td><span class="delta">${r.n_zones_current}<span class="arrow">→</span>${r.n_zones_new}</span></td>
           <td class="num">${r.pct_coverage_match}%</td>
-          <td class="num">${r.avg_zone_km2.toFixed(2)} <span class="delta">(${r.min_zone_km2.toFixed(2)}–${r.max_zone_km2.toFixed(2)})</span></td>
+          <td class="num">${r.cur_avg_zone_km2.toFixed(2)} <span class="delta">(${r.cur_min_zone_km2.toFixed(2)}–${r.cur_max_zone_km2.toFixed(2)})</span></td>
+          <td class="num">${r.new_avg_zone_km2.toFixed(2)} <span class="delta">(${r.new_min_zone_km2.toFixed(2)}–${r.new_max_zone_km2.toFixed(2)})</span></td>
           <td><button class="btn ghost mini" data-pair="${r.pairIdx}">View</button></td>
         </tr>`;
       }).join('') + '</tbody>';
@@ -801,7 +808,8 @@ document.getElementById('runBtn').onclick = async () => {
 
     const csvCols = ['rank', 'station_name', 'similarity_score', 'verdict', 'pct_area_keeping_zone',
       'pct_coverage_match', 'n_zones_current', 'n_zones_new',
-      'avg_zone_km2', 'min_zone_km2', 'max_zone_km2', 'matched_by',
+      'cur_avg_zone_km2', 'cur_min_zone_km2', 'cur_max_zone_km2',
+      'new_avg_zone_km2', 'new_min_zone_km2', 'new_max_zone_km2', 'matched_by',
       'difference_score', 'agreement_share', 'area_ari', 'mean_best_iou', 'footprint_iou',
       'area_current_km2', 'area_new_km2', 'zone_count_change_pct'];
     const dl = document.createElement('div'); dl.className = 'dl';
