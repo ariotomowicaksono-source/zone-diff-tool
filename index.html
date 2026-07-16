@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zone Diff Tool</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --font-sans: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+    --paper: #eceeea;  --panel: #ffffff;  --panel-2: #f5f7f3;
+    --ink: #171b1f;    --ink-soft: #545b62; --ink-faint: #848b91;
+    --line: #d7dcd6;   --line-strong: #c3c9c2;
+    --accent: #d9541f; --accent-ink: #ffffff; --accent-soft: color-mix(in srgb, var(--accent) 11%, transparent);
+    --good: #0c8347;   --info: #2765cf;    --warn: #a9710a;    --crit: #cc3b39;
+    --shadow: 0 1px 2px rgba(20,25,30,.05), 0 8px 24px -12px rgba(20,25,30,.18);
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0e1114; --panel: #161a20; --panel-2: #1b2027;
+      --ink: #eef1ef;   --ink-soft: #9aa2a9; --ink-faint: #646c73;
+      --line: #262d34;  --line-strong: #343c44;
+      --accent: #f47a4c; --accent-ink: #17110c; --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+      --good: #35c07a;  --info: #6aa0f0;    --warn: #e0a53a;    --crit: #ef6f6c;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0e1114; --panel: #161a20; --panel-2: #1b2027;
+    --ink: #eef1ef;   --ink-soft: #9aa2a9; --ink-faint: #646c73;
+    --line: #262d34;  --line-strong: #343c44;
+    --accent: #f47a4c; --accent-ink: #17110c; --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+    --good: #35c07a;  --info: #6aa0f0;    --warn: #e0a53a;    --crit: #ef6f6c;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    font-family: var(--font-sans); color: var(--ink); background: var(--paper);
+    margin: 0; line-height: 1.5; -webkit-font-smoothing: antialiased;
+    background-image: radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0);
+    background-size: 26px 26px;
+  }
+  .wrap { max-width: 1140px; margin: 0 auto; padding: 0 20px 72px; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--ink-faint); }
+
+  /* top bar */
+  .topbar { display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 20px; max-width: 1140px; margin: 0 auto; }
+  .brand { display: flex; flex-direction: column; gap: 3px; }
+  .wordmark { font-size: 19px; font-weight: 700; letter-spacing: -.01em; display: flex; align-items: center; gap: 9px; }
+  .wordmark .reg { width: 15px; height: 15px; border: 2px solid var(--accent); border-radius: 50%;
+    position: relative; flex: none; }
+  .wordmark .reg::after { content: ""; position: absolute; inset: 3px; background: var(--accent); border-radius: 50%; }
+  .iconbtn { font: inherit; cursor: pointer; background: var(--panel); color: var(--ink);
+    border: 1px solid var(--line-strong); border-radius: 10px; width: 40px; height: 40px;
+    display: grid; place-items: center; font-size: 17px; transition: border-color .15s, transform .15s; }
+  .iconbtn:hover { border-color: var(--accent); transform: translateY(-1px); }
+
+  /* hero */
+  .hero { padding: 14px 0 30px; border-bottom: 1px solid var(--line); margin-bottom: 30px; }
+  h1 { font-size: clamp(26px, 4vw, 38px); line-height: 1.1; letter-spacing: -.025em;
+    margin: 12px 0 10px; text-wrap: balance; max-width: 18ch; }
+  .lede { font-size: 16px; color: var(--ink-soft); margin: 0 0 18px; max-width: 62ch; }
+  .badge { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600;
+    color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent);
+    padding: 6px 12px; border-radius: 999px; }
+  .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); }
+
+  /* section scaffolding */
+  .step { margin: 28px 0 0; }
+  .step-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  .step-num { font-family: var(--font-mono); font-size: 12px; color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 6px; padding: 1px 7px; }
+  .step-head h2 { font-size: 16px; margin: 0; letter-spacing: -.01em; }
+
+  /* upload */
+  .upload { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: stretch; }
+  .sheet { background: var(--panel); border: 1.5px dashed var(--line-strong); border-radius: var(--radius);
+    padding: 18px; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; }
+  .sheet:hover { border-color: var(--accent); }
+  .sheet:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .sheet.over { border-color: var(--accent); background: var(--accent-soft); box-shadow: var(--shadow); }
+  .sheet .tag { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 8px;
+    background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 14px; font-family: var(--font-mono); }
+  .sheet h3 { font-size: 15px; margin: 12px 0 4px; }
+  .sheet .hint { font-size: 13px; color: var(--ink-faint); margin: 0 0 14px; }
+  .filebtn { display: inline-block; font-size: 13.5px; font-weight: 600;
+    border: 1px solid var(--line-strong); background: var(--panel-2); color: var(--ink);
+    padding: 7px 14px; border-radius: 9px; }
+  /* the whole .sheet is the click target (see JS); the file input is only kept in the
+     DOM, visually hidden but focusable, and opened via input.click() — this is the one
+     path that reliably opens the picker inside sandboxed iframes (Apps Script / Artifact) */
+  .sr-file { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); border: 0; }
+  .filelist { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-soft);
+    max-height: 84px; overflow-y: auto; margin-top: 12px; line-height: 1.7; }
+  .vs { align-self: center; font-family: var(--font-mono); font-size: 12px; letter-spacing: .1em;
+    color: var(--ink-faint); text-transform: uppercase; }
+
+  details.fmt { margin: 14px 0 0; font-size: 13px; color: var(--ink-soft); }
+  details.fmt summary { cursor: pointer; color: var(--ink-soft); font-weight: 600; }
+  details.fmt p { margin: 8px 0 0; max-width: 90ch; }
+  details.fmt code { font-family: var(--font-mono); font-size: 12px; background: var(--panel-2);
+    padding: 1px 5px; border-radius: 4px; }
+
+  /* actions */
+  .actions { display: flex; gap: 10px; align-items: center; margin: 26px 0 0; flex-wrap: wrap; }
+  button.btn { font: inherit; font-weight: 600; cursor: pointer; border-radius: 10px; padding: 11px 22px;
+    border: 1px solid transparent; transition: transform .12s, box-shadow .15s, border-color .15s, background .15s; }
+  button.btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); box-shadow: var(--shadow); }
+  .btn.primary:hover { filter: brightness(1.05); }
+  .btn.ghost { background: transparent; color: var(--ink); border-color: var(--line-strong); }
+  .btn.ghost:hover { border-color: var(--accent); }
+  .btn.mini { padding: 5px 14px; font-size: 12.5px; }
+
+  /* status */
+  #status { margin: 18px 0 0; }
+  #status:empty { display: none; }
+  .statusline { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 500;
+    padding: 11px 15px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--panel); border-left: 3px solid var(--ink-faint); }
+  .statusline.ok { border-left-color: var(--good); color: var(--ink); }
+  .statusline.err { border-left-color: var(--crit); color: var(--ink); }
+  .statusline .k { font-weight: 700; }
+  .statusline.ok .k { color: var(--good); }
+  .statusline.err .k { color: var(--crit); }
+  .statusline .glyph { font-family: var(--font-mono); font-weight: 700; }
+  .statusline.ok .glyph { color: var(--good); }
+  .statusline.err .glyph { color: var(--crit); }
+
+  /* results */
+  .fade { animation: rise .45s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .stats { display: flex; gap: 12px; flex-wrap: wrap; margin: 22px 0 16px; }
+  .stat { flex: 1 1 150px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 15px 17px; }
+  .stat .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 28px; font-weight: 700;
+    letter-spacing: -.02em; line-height: 1; }
+  .stat .l { font-size: 12px; color: var(--ink-faint); margin-top: 7px; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+  .tablewrap { max-height: 520px; overflow: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  thead th { position: sticky; top: 0; z-index: 1; background: var(--panel-2); text-align: right;
+    padding: 12px 14px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--ink-soft); border-bottom: 1px solid var(--line-strong); white-space: nowrap; }
+  thead th[title] { text-decoration: underline dotted var(--ink-faint); text-underline-offset: 3px; cursor: help; }
+  thead th.hub, tbody td.hub { text-align: left; }
+  tbody td { padding: 11px 14px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr { transition: background .12s; }
+  tbody tr:hover { background: var(--panel-2); }
+  td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .rank { color: var(--ink-faint); font-family: var(--font-mono); }
+  .hubname { font-weight: 600; }
+  .pin { color: var(--ink-faint); cursor: help; }
+
+  .scorecell { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+  .scoreval { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; min-width: 22px; }
+  .meter { display: inline-block; width: 74px; height: 7px; border-radius: 4px; background: var(--line); overflow: hidden; flex: none; }
+  .meter > i { display: block; height: 100%; border-radius: 4px; transition: width .5s cubic-bezier(.2,.7,.2,1); }
+  .chip { display: inline-block; padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .chip.c0 { color: var(--good); background: color-mix(in srgb, var(--good) 15%, transparent); }
+  .chip.c1 { color: var(--info); background: color-mix(in srgb, var(--info) 15%, transparent); }
+  .chip.c2 { color: var(--warn); background: color-mix(in srgb, var(--warn) 17%, transparent); }
+  .chip.c3 { color: var(--crit); background: color-mix(in srgb, var(--crit) 15%, transparent); }
+  .meter.c0 > i { background: var(--good); }
+  .meter.c1 > i { background: var(--info); }
+  .meter.c2 > i { background: var(--warn); }
+  .meter.c3 > i { background: var(--crit); }
+  .delta { font-family: var(--font-mono); color: var(--ink-soft); }
+  .delta .arrow { color: var(--ink-faint); margin: 0 3px; }
+
+  .dl { margin: 16px 0 0; display: flex; gap: 10px; flex-wrap: wrap; }
+  details.skip { margin: 14px 0 0; font-size: 13px; color: var(--ink-soft); }
+  details.skip summary { cursor: pointer; font-weight: 600; }
+  details.skip ul { margin: 8px 0 0; }
+
+  /* maps */
+  .mapsec { margin-top: 40px; }
+  .mapsec .note { font-size: 13px; color: var(--ink-soft); margin: 4px 0 16px; max-width: 80ch; }
+  .maps { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .mappanel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 15px; }
+  .mappanel.overlay { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .mappanel .ph { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+  .mappanel h3 { font-size: 14px; margin: 0; }
+  .mappanel .badge-o { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--accent); border: 1px solid var(--accent); border-radius: 5px; padding: 1px 6px; }
+  .mappanel .cap { font-size: 12px; color: var(--ink-faint); margin: 2px 0 10px; }
+  .mappanel svg { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); display: block; }
+  svg path.zone { transition: fill-opacity .12s; }
+  svg path.zone:hover { fill-opacity: .9; }
+  .maptools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 2px 0 14px; }
+  .tiletoggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
+    color: var(--ink-soft); cursor: pointer; user-select: none; }
+  .tiletoggle input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+  .tilewarn { display: none; font-size: 12.5px; color: var(--warn); font-weight: 600; }
+  .mapattr { font-size: 11px; color: var(--ink-faint); margin-top: 12px; }
+  .mapattr a { color: inherit; }
+
+  @media (max-width: 640px) {
+    .upload { grid-template-columns: 1fr; }
+    .vs { justify-self: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fade { animation: none; } .meter > i { transition: none; } * { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="eyebrow">SPX Last-Mile · Survey Registration</span>
+    <span class="wordmark"><span class="reg"></span>Zone Diff</span>
+  </div>
+  <button id="themeBtn" class="iconbtn" title="Switch light / dark" aria-label="Switch light / dark">◐</button>
+</header>
+
+<div class="wrap">
+  <section class="hero">
+    <span class="eyebrow">Rollout planning tool</span>
+    <h1>Compare current &amp; newly generated driver zones</h1>
+    <p class="lede">Scores how different each hub's proposed zoning is from what drivers run today, and ranks
+      hubs from least to most changed — so the smoothest rollouts rise to the top.</p>
+    <span class="badge"><span class="dot"></span>Runs entirely in your browser — no upload, nothing leaves your laptop</span>
+  </section>
+
+  <section class="step">
+    <div class="step-head"><span class="step-num">01</span><h2>Load the two zone sets</h2></div>
+    <div class="upload">
+      <div class="sheet" id="dropCur">
+        <span class="tag">A</span>
+        <h3>Current active zones</h3>
+        <p class="hint">Drag files onto this box, or click anywhere to browse — .json / .geojson, many at once</p>
+        <span class="filebtn">Choose files</span>
+        <input type="file" id="fileCur" class="sr-file" multiple accept=".json,.geojson">
+        <div class="filelist" id="listCur"></div>
+      </div>
+      <div class="vs">vs</div>
+      <div class="sheet" id="dropNew">
+        <span class="tag">B</span>
+        <h3>New generated zones</h3>
+        <p class="hint">Drag files onto this box, or click anywhere to browse — .json / .geojson, many at once</p>
+        <span class="filebtn">Choose files</span>
+        <input type="file" id="fileNew" class="sr-file" multiple accept=".json,.geojson">
+        <div class="filelist" id="listNew"></div>
+      </div>
+    </div>
+    <details class="fmt">
+      <summary>Accepted file formats &amp; how hubs are matched</summary>
+      <p>Per file: FMS zoning geojson (<code>customized_zone_list</code>), a standard GeoJSON
+        <code>FeatureCollection</code>, or a JSON list of records with <code>zone_geo_polygon</code> WKT.
+        Zones are related by <b>geographic overlap only — zone names are never used</b> for the comparison
+        (they appear only as labels). Hubs are paired by station name; hubs whose names don't match are
+        paired by location instead.</p>
+    </details>
+  </section>
+
+  <section class="step">
+    <div class="step-head"><span class="step-num">02</span><h2>Run the comparison</h2></div>
+    <div class="actions">
+      <button class="btn primary" id="runBtn">Compare zones</button>
+      <button class="btn ghost" id="testBtn" title="Runs built-in synthetic checks with known answers">Self-test</button>
+    </div>
+    <div id="status"></div>
+  </section>
+
+  <div id="results"></div>
+  <div id="mapview"></div>
+</div>
+
+<script>
+'use strict';
+
+// ============================ parsing ============================
+
+function parseWktPolygons(w) {           // POLYGON/MULTIPOLYGON WKT -> array of rings
+  const rings = [], re = /\(([^()]+)\)/g;
+  let m;
+  while ((m = re.exec(w)))
+    rings.push(m[1].split(',').map(s => s.trim().split(/\s+/).slice(0, 2).map(Number)));
+  if (!rings.length) throw new Error('unparseable WKT');
+  return rings;
+}
+function geomToRings(g) {
+  if (g.type === 'Polygon') return g.coordinates;
+  if (g.type === 'MultiPolygon') return g.coordinates.flat();
+  throw new Error('unsupported geometry type: ' + g.type);
+}
+function zoneLabel(o, fb) {
+  for (const k of ['zone_name', 'zone_id', 'name', 'id'])
+    if (o[k] !== undefined && o[k] !== null && o[k] !== '') return String(o[k]);
+  return fb;
+}
+// one parsed JSON document -> [{station, zone, rings}]
+function parseZoneJson(data, fallbackStation) {
+  const out = [];
+  if (data && data.customized_zone_list) {                       // FMS zoning format
+    const st = data.station_name || fallbackStation;
+    data.customized_zone_list.forEach((z, i) =>
+      out.push({ station: st, zone: zoneLabel(z, 'zone_' + i), rings: geomToRings(z.zone_geo_info) }));
+  } else if (data && data.type === 'FeatureCollection') {        // standard GeoJSON
+    (data.features || []).forEach((f, i) => {
+      const p = f.properties || {};
+      out.push({ station: p.station_name || fallbackStation, zone: zoneLabel(p, 'zone_' + i), rings: geomToRings(f.geometry) });
+    });
+  } else if (Array.isArray(data)) {                              // records export
+    data.forEach((r, i) => {
+      let rings;
+      if (r.zone_geo_polygon) rings = parseWktPolygons(r.zone_geo_polygon);
+      else {
+        const g = r.geometry || r.zone_geo_info;
+        if (!g) throw new Error('record ' + i + ': no zone_geo_polygon / geometry');
+        rings = geomToRings(g);
+      }
+      out.push({ station: r.station_name || fallbackStation, zone: zoneLabel(r, 'zone_' + i), rings });
+    });
+  } else throw new Error('unrecognized JSON structure (expected FMS zoning dict, FeatureCollection, or list of records)');
+  return out;
+}
+
+const normName = s => String(s).trim().replace(/\s+/g, ' ').toLowerCase();
+const stationFromFilename = n => n.replace(/\.(geo)?json$/i, '').replace(/^\d+_/, '');
+
+// group zone records into hubs: Map(normName -> {display, zones, centroid})
+function groupHubs(records) {
+  const hubs = new Map();
+  for (const r of records) {
+    const key = normName(r.station);
+    if (!hubs.has(key)) hubs.set(key, { display: String(r.station), zones: [], sx: 0, sy: 0, np: 0 });
+    const h = hubs.get(key);
+    h.zones.push(r);
+    for (const ring of r.rings) for (const p of ring) { h.sx += p[0]; h.sy += p[1]; h.np++; }
+  }
+  for (const h of hubs.values()) { h.centroid = [h.sx / h.np, h.sy / h.np]; }
+  return hubs;
+}
+
+// pair hubs: exact name match first, then nearest-footprint fallback (< ~11 km)
+function matchHubs(cur, neu) {
+  const pairs = [], skipped = [];
+  const leftCur = [], leftNew = [];
+  for (const [k, c] of cur) {
+    if (neu.has(k)) pairs.push({ cur: c, neu: neu.get(k), name: c.display, how: 'name' });
+    else leftCur.push(c);
+  }
+  for (const [k, n] of neu) if (!cur.has(k)) leftNew.push(n);
+  for (const c of leftCur) {
+    let best = null, bd = 0.1;                       // 0.1 deg ~ 11 km
+    for (const n of leftNew) {
+      if (n._used) continue;
+      const d = Math.hypot(c.centroid[0] - n.centroid[0], c.centroid[1] - n.centroid[1]);
+      if (d < bd) { bd = d; best = n; }
+    }
+    if (best) { best._used = true; pairs.push({ cur: c, neu: best, name: c.display + ' ~ ' + best.display, how: 'location' }); }
+    else skipped.push({ station: c.display, reason: 'no_generated_zones' });
+  }
+  for (const n of leftNew) if (!n._used) skipped.push({ station: n.display, reason: 'no_current_zones' });
+  return { pairs, skipped };
+}
+
+// ============================ compare core ============================
+// Method (see ZONE_DIFF_DESIGN.md): project to hub-local meters, rasterize both
+// zonings onto a fine grid (~<=15 m cells), derive all metrics from the
+// cell-count contingency table. Zones are related by overlap only, never by name.
+
+const GRID = 512;
+
+function rasterize(zones, x0, y0, cell, nx, ny) {    // scanline even-odd fill
+  const own = new Int32Array(nx * ny).fill(-1);
+  zones.forEach((z, zi) => {
+    for (let j = 0; j < ny; j++) {
+      const yc = y0 + (j + 0.5) * cell, xs = [];
+      for (const ring of z.pr) {
+        for (let e = 0; e < ring.length; e++) {
+          const p = ring[e], q = ring[(e + 1) % ring.length];   // closing edge implicit
+          if ((p[1] <= yc) !== (q[1] <= yc))
+            xs.push(p[0] + (yc - p[1]) * (q[0] - p[0]) / (q[1] - p[1]));
+        }
+      }
+      if (!xs.length) continue;
+      xs.sort((a, b) => a - b);
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        let i0 = Math.max(0, Math.ceil((xs[k] - x0) / cell - 0.5));
+        const i1 = Math.min(nx - 1, Math.floor((xs[k + 1] - x0) / cell - 0.5));
+        for (let i = i0; i <= i1; i++) own[j * nx + i] = zi;
+      }
+    }
+  });
+  return own;
+}
+
+function compareHub(curZones, newZones) {
+  // project lon/lat -> local meters (equirectangular around the hub)
+  let latSum = 0, np = 0;
+  for (const z of [...curZones, ...newZones]) for (const ring of z.rings) for (const p of ring) { latSum += p[1]; np++; }
+  const lat0 = latSum / np;
+  const kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110574;
+  let minx = 1/0, miny = 1/0, maxx = -1/0, maxy = -1/0;
+  for (const z of [...curZones, ...newZones]) {
+    z.pr = z.rings.map(ring => ring.map(p => [p[0] * kx, p[1] * ky]));
+    for (const ring of z.pr) for (const p of ring) {
+      if (p[0] < minx) minx = p[0]; if (p[0] > maxx) maxx = p[0];
+      if (p[1] < miny) miny = p[1]; if (p[1] > maxy) maxy = p[1];
+    }
+  }
+  const w = maxx - minx, h = maxy - miny;
+  if (!(w > 0 && h > 0)) throw new Error('degenerate footprint');
+  if (Math.max(w, h) > 200000) throw new Error('footprint >200 km — geometry looks invalid');
+  const cell = Math.max(w, h) / GRID;
+  const nx = Math.max(1, Math.ceil(w / cell)), ny = Math.max(1, Math.ceil(h / cell));
+
+  const ownCur = rasterize(curZones, minx, miny, cell, nx, ny);
+  const ownNew = rasterize(newZones, minx, miny, cell, nx, ny);
+
+  const nC = curZones.length, nN = newZones.length;
+  const M = new Float64Array(nC * nN), a = new Float64Array(nC), b = new Float64Array(nN);
+  let unionC = 0, bothC = 0, curC = 0, newC = 0;
+  for (let idx = 0; idx < ownCur.length; idx++) {
+    const c = ownCur[idx], n = ownNew[idx];
+    if (c >= 0) curC++;
+    if (n >= 0) newC++;
+    if (c >= 0 || n >= 0) unionC++;
+    if (c >= 0 && n >= 0) { bothC++; M[c * nN + n]++; a[c]++; b[n]++; }
+  }
+  const T = bothC;
+  const m = {
+    footprint_iou: unionC ? bothC / unionC : 0,
+    n_zones_current: nC, n_zones_new: nN,
+    area_current_km2: curC * cell * cell / 1e6,
+    area_new_km2: newC * cell * cell / 1e6,
+    zone_count_change_pct: 100 * (nN - nC) / nC,
+  };
+  const matches = [];
+  if (T === 0) {
+    Object.assign(m, { agreement_share: 0, area_ari: 0, mean_best_iou: 0, difference_score: 1 });
+  } else {
+    let rowMaxSum = 0, wRowIou = 0, sumA = 0, S = 0, A = 0, B = 0;
+    for (let i = 0; i < nC; i++) {
+      let rmax = 0, bestIou = 0, bestJ = -1;
+      for (let j = 0; j < nN; j++) {
+        const v = M[i * nN + j];
+        S += v * v;
+        if (v > rmax) rmax = v;
+        const iou = v ? v / (a[i] + b[j] - v) : 0;
+        if (iou > bestIou) { bestIou = iou; bestJ = j; }
+      }
+      rowMaxSum += rmax;
+      wRowIou += a[i] * bestIou; sumA += a[i];
+      A += a[i] * a[i];
+      matches.push({
+        current_zone: curZones[i].zone,
+        best_new_zone: bestJ >= 0 ? newZones[bestJ].zone : '',
+        best_iou: bestIou,
+        overlap_share_of_current: (bestJ >= 0 && a[i]) ? M[i * nN + bestJ] / a[i] : 0,
+      });
+    }
+    let colMaxSum = 0, wColIou = 0, sumB = 0;
+    for (let j = 0; j < nN; j++) {
+      let cmax = 0, bestIou = 0;
+      for (let i = 0; i < nC; i++) {
+        const v = M[i * nN + j];
+        if (v > cmax) cmax = v;
+        const iou = v ? v / (a[i] + b[j] - v) : 0;
+        if (iou > bestIou) bestIou = iou;
+      }
+      colMaxSum += cmax;
+      wColIou += b[j] * bestIou; sumB += b[j];
+      B += b[j] * b[j];
+    }
+    const agreement = (rowMaxSum + colMaxSum) / (2 * T);
+    const E = A * B / (T * T), denom = (A + B) / 2 - E;
+    const ari = denom > 1e-9 ? (S - E) / denom : 1;
+    Object.assign(m, {
+      agreement_share: agreement,
+      area_ari: ari,
+      mean_best_iou: 0.5 * (wRowIou / sumA + wColIou / sumB),
+      difference_score: 1 - 0.5 * (agreement + Math.max(ari, 0)),
+    });
+  }
+  for (const z of [...curZones, ...newZones]) delete z.pr;
+  return { metrics: m, matches };
+}
+
+// friendly framing of the scores
+function verdictOf(sim) {          // sim = 0..100
+  if (sim >= 90) return { label: 'Nearly identical', cls: 'c0' };
+  if (sim >= 75) return { label: 'Very similar', cls: 'c1' };
+  if (sim >= 55) return { label: 'Moderate change', cls: 'c2' };
+  return { label: 'Major redraw', cls: 'c3' };
+}
+
+// ============================ map rendering ============================
+// Categorical zone colors: reference palette hues, cycled across zones (identity
+// is carried by the hover tooltip; color separates neighbours).
+const ZONE_COLORS = ['#2a78d6', '#1baf7a', '#eda100', '#008300', '#4a3aa7', '#e34948', '#e87ba4', '#eb6834'];
+
+function ringsToPath(rings, kx, sc, minx, maxy) {
+  return rings.map(ring =>
+    ring.map((p, i) => (i ? 'L' : 'M') + ((p[0] * kx - minx) * sc).toFixed(1) + ' ' + ((maxy - p[1]) * sc).toFixed(1)).join(' ') + ' Z'
+  ).join(' ');
+}
+
+function hubSvg(zoneSets, W) {
+  // zoneSets: [{zones, mode:'fill'|'line'}] drawn in order, shared extent
+  const all = zoneSets.flatMap(s => s.zones);
+  let latSum = 0, np = 0;
+  for (const z of all) for (const ring of z.rings) for (const p of ring) { latSum += p[1]; np++; }
+  const kx = Math.cos(latSum / np * Math.PI / 180);
+  let minx = 1/0, miny = 1/0, maxx = -1/0, maxy = -1/0;
+  for (const z of all) for (const ring of z.rings) for (const p of ring) {
+    const x = p[0] * kx;
+    if (x < minx) minx = x; if (x > maxx) maxx = x;
+    if (p[1] < miny) miny = p[1]; if (p[1] > maxy) maxy = p[1];
+  }
+  const w = maxx - minx || 1e-9, h = maxy - miny || 1e-9;
+  const sc = W / Math.max(w, h), pw = w * sc, ph = h * sc, pad = 8;
+  let paths = '';
+  for (const set of zoneSets) {
+    set.zones.forEach((z, i) => {
+      const d = ringsToPath(z.rings, kx, sc, minx, maxy);
+      const title = `<title>${String(z.zone).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</title>`;
+      paths += set.mode === 'line'
+        ? `<path d="${d}" fill="none" stroke="#111" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" fill-rule="evenodd" class="lineonly">${title}</path>`
+        : `<path d="${d}" class="zone" fill="${ZONE_COLORS[i % ZONE_COLORS.length]}" fill-opacity="0.55" stroke="#fff" stroke-width="1.2" vector-effect="non-scaling-stroke" fill-rule="evenodd">${title}</path>`;
+    });
+  }
+  return `<svg viewBox="${-pad} ${-pad} ${pw + 2 * pad} ${ph + 2 * pad}" xmlns="http://www.w3.org/2000/svg">
+    <style>@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .lineonly { stroke: #eee; } } :root[data-theme="dark"] .lineonly { stroke: #eee; }</style>${paths}</svg>`;
+}
+
+// --- optional OpenStreetMap street base map (Web Mercator, drawn in the same
+// SVG as the zones so they stay aligned; loads tiles only when toggled on) ---
+const lonToGX = (lng, ws) => (lng + 180) / 360 * ws;
+const latToGY = (lat, ws) => { const s = Math.sin(lat * Math.PI / 180); return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * ws; };
+
+function hubSvgTiles(zoneSets, W) {
+  const all = zoneSets.flatMap(s => s.zones);
+  let minLng = 1/0, maxLng = -1/0, minLat = 1/0, maxLat = -1/0;
+  for (const z of all) for (const ring of z.rings) for (const p of ring) {
+    if (p[0] < minLng) minLng = p[0]; if (p[0] > maxLng) maxLng = p[0];
+    if (p[1] < minLat) minLat = p[1]; if (p[1] > maxLat) maxLat = p[1];
+  }
+  // largest zoom whose projected footprint still fits the target box
+  let z = 19;
+  for (; z > 0; z--) {
+    const ws = 256 * 2 ** z;
+    if (lonToGX(maxLng, ws) - lonToGX(minLng, ws) <= W && latToGY(minLat, ws) - latToGY(maxLat, ws) <= W * 1.5) break;
+  }
+  const ws = 256 * 2 ** z, n = 2 ** z, pad = 16;
+  const X0 = lonToGX(minLng, ws) - pad, Y0 = latToGY(maxLat, ws) - pad;
+  const PW = lonToGX(maxLng, ws) - lonToGX(minLng, ws) + 2 * pad;
+  const PH = latToGY(minLat, ws) - latToGY(maxLat, ws) + 2 * pad;
+
+  let tiles = '';
+  for (let tx = Math.floor(X0 / 256); tx <= Math.floor((X0 + PW) / 256); tx++)
+    for (let ty = Math.floor(Y0 / 256); ty <= Math.floor((Y0 + PH) / 256); ty++) {
+      if (ty < 0 || ty >= n) continue;
+      const wtx = ((tx % n) + n) % n;
+      tiles += `<image href="https://tile.openstreetmap.org/${z}/${wtx}/${ty}.png" x="${(tx * 256 - X0).toFixed(1)}" y="${(ty * 256 - Y0).toFixed(1)}" width="256" height="256"/>`;
+    }
+
+  let paths = '';
+  for (const set of zoneSets) {
+    set.zones.forEach((zn, i) => {
+      const d = zn.rings.map(ring => ring.map((p, k) => (k ? 'L' : 'M') +
+        (lonToGX(p[0], ws) - X0).toFixed(1) + ' ' + (latToGY(p[1], ws) - Y0).toFixed(1)).join(' ') + ' Z').join(' ');
+      const title = `<title>${String(zn.zone).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</title>`;
+      paths += set.mode === 'line'
+        ? `<path d="${d}" fill="none" stroke="#111" stroke-width="2.5" stroke-dasharray="7 4" vector-effect="non-scaling-stroke" fill-rule="evenodd">${title}</path>`
+        : `<path d="${d}" class="zone" fill="${ZONE_COLORS[i % ZONE_COLORS.length]}" fill-opacity="0.42" stroke="#fff" stroke-width="1.6" vector-effect="non-scaling-stroke" fill-rule="evenodd">${title}</path>`;
+    });
+  }
+  const attr = `<text x="${(PW - 4).toFixed(0)}" y="${(PH - 5).toFixed(0)}" text-anchor="end" font-size="10" fill="#333" fill-opacity="0.75" style="paint-order:stroke;stroke:#fff;stroke-width:2.5px">© OpenStreetMap</text>`;
+  return `<svg viewBox="0 0 ${PW.toFixed(0)} ${PH.toFixed(0)}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">${tiles}${paths}${attr}</svg>`;
+}
+
+let showTiles = false, currentPair = null;
+
+function showHubMaps(pair, container) {
+  currentPair = pair;
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const render = showTiles ? hubSvgTiles : hubSvg;
+  const mk = (title, cap, svg, overlay) =>
+    `<div class="mappanel${overlay ? ' overlay' : ''}"><div class="ph"><h3>${title}</h3>${
+      overlay ? '<span class="badge-o">overlay</span>' : ''}</div><div class="cap">${cap}</div>${svg}</div>`;
+  container.className = 'mapsec fade';
+  container.innerHTML = `<div class="step-head"><span class="step-num">03</span><h2>Visual comparison — ${esc(pair.name)}</h2></div>
+    <div class="maptools">
+      <label class="tiletoggle"><input type="checkbox" id="tileChk"${showTiles ? ' checked' : ''}> Show street map (OpenStreetMap)</label>
+      <span class="tilewarn" id="tilewarn">Street map couldn't load here — it's blocked in this hosted view. Use the downloadable file or the Apps Script link.</span>
+    </div>
+    <p class="note">Hover a zone to see its name. Colors only separate neighbouring zones — matching colors
+    between the two maps do <b>not</b> mean matching zones. The overlay lays the new zone boundaries (dashed)
+    over today's filled zones, so moved boundaries stand out.</p>
+    <div class="maps">` +
+    mk('Current active zones', `${pair.cur.zones.length} zones`, render([{ zones: pair.cur.zones, mode: 'fill' }], 640)) +
+    mk('New generated zones', `${pair.neu.zones.length} zones`, render([{ zones: pair.neu.zones, mode: 'fill' }], 640)) +
+    mk('Boundary overlay', 'current filled · new boundaries dashed', render([
+      { zones: pair.cur.zones, mode: 'fill' }, { zones: pair.neu.zones, mode: 'line' }], 640), true) +
+    `</div>` +
+    (showTiles ? `<p class="mapattr">Street tiles © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors. Loading them contacts openstreetmap.org; zone data stays in your browser.</p>` : '');
+
+  document.getElementById('tileChk').onchange = e => { showTiles = e.target.checked; showHubMaps(currentPair, container); };
+  if (showTiles) {                                    // probe one tile; warn if blocked/offline
+    const probe = new Image();
+    probe.onerror = () => { const w = document.getElementById('tilewarn'); if (w) w.style.display = 'inline'; };
+    probe.src = 'https://tile.openstreetmap.org/3/4/3.png';
+  }
+  container.scrollIntoView({ behavior: 'smooth' });
+}
+
+// ============================ UI plumbing ============================
+
+const files = { cur: [], neu: [] };
+function wireDrop(dropId, inputId, listId, side) {
+  const drop = document.getElementById(dropId), input = document.getElementById(inputId), list = document.getElementById(listId);
+  const add = fl => {
+    for (const f of fl) files[side].push(f);
+    list.textContent = files[side].length + ' file(s): ' + files[side].map(f => f.name).join(', ');
+  };
+  input.addEventListener('change', () => { files[side] = []; add(input.files); });
+  // click anywhere in the box opens the picker (works even where iframe sandboxes block
+  // OS drag-drop); guard against the input's own bubbled click re-triggering it
+  drop.addEventListener('click', e => { if (e.target !== input) input.click(); });
+  // dragenter + dragover must both preventDefault for the drop to fire across browsers
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; drop.classList.add('over'); }));
+  drop.addEventListener('dragleave', e => { if (!drop.contains(e.relatedTarget)) drop.classList.remove('over'); });
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); e.stopPropagation(); drop.classList.remove('over');
+    const dropped = e.dataTransfer && e.dataTransfer.files;
+    if (dropped && dropped.length) add(dropped);
+  });
+}
+wireDrop('dropCur', 'fileCur', 'listCur', 'cur');
+wireDrop('dropNew', 'fileNew', 'listNew', 'neu');
+// a file dropped outside a zone must not make the browser navigate to it
+['dragover', 'drop'].forEach(ev => window.addEventListener(ev, e => e.preventDefault()));
+
+const status = document.getElementById('status'), results = document.getElementById('results'), mapview = document.getElementById('mapview');
+const setStatus = (kind, html) => { status.innerHTML = `<div class="statusline ${kind}">${html}</div>`; };
+const busy = msg => setStatus('', `<span class="glyph">⋯</span><span>${msg}</span>`);
+
+// theme toggle
+(function () {
+  const root = document.documentElement, btn = document.getElementById('themeBtn');
+  let stored = null;
+  try { stored = localStorage.getItem('zd-theme'); } catch (e) {}
+  if (stored) root.setAttribute('data-theme', stored);
+  btn.onclick = () => {
+    const dark = root.getAttribute('data-theme') === 'dark' ||
+      (!root.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+    const next = dark ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('zd-theme', next); } catch (e) {}
+  };
+})();
+
+async function loadSide(side) {
+  const records = [];
+  for (const f of files[side]) {
+    const data = JSON.parse(await f.text());
+    records.push(...parseZoneJson(data, stationFromFilename(f.name)));
+  }
+  return groupHubs(records);
+}
+
+function toCsv(rows, cols) {
+  const esc = v => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  return [cols.join(',')].concat(rows.map(r => cols.map(c => esc(r[c])).join(','))).join('\n');
+}
+function dlButton(label, csvText, filename) {
+  const btn = document.createElement('button');
+  btn.className = 'btn ghost mini';
+  btn.textContent = label;
+  btn.onclick = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csvText], { type: 'text/csv' }));
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  return btn;
+}
+const escHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+let lastPairs = [];
+
+document.getElementById('runBtn').onclick = async () => {
+  results.innerHTML = ''; results.className = ''; mapview.innerHTML = ''; mapview.className = '';
+  try {
+    if (!files.cur.length || !files.neu.length) { setStatus('err', '<span class="glyph">✕</span><span><span class="k">Missing files.</span> Add files on both sides first.</span>'); return; }
+    busy('Reading files…');
+    const curHubs = await loadSide('cur'), newHubs = await loadSide('neu');
+    const { pairs, skipped } = matchHubs(curHubs, newHubs);
+    if (!pairs.length) { setStatus('err', '<span class="glyph">✕</span><span><span class="k">No pairs.</span> No hubs could be paired between the two sides (by name or by location).</span>'); return; }
+    lastPairs = pairs;
+
+    const summary = [], allMatches = [];
+    for (let i = 0; i < pairs.length; i++) {
+      busy(`Comparing hub ${i + 1} / ${pairs.length}: ${escHtml(pairs[i].name)}`);
+      await new Promise(r => setTimeout(r));      // keep UI responsive
+      try {
+        const { metrics, matches } = compareHub(pairs[i].cur.zones, pairs[i].neu.zones);
+        summary.push({ station_name: pairs[i].name, matched_by: pairs[i].how, pairIdx: i, ...metrics });
+        matches.forEach(x => allMatches.push({ station_name: pairs[i].name, ...x }));
+      } catch (e) {
+        skipped.push({ station: pairs[i].name, reason: String(e.message || e) });
+      }
+    }
+    summary.sort((x, y) => x.difference_score - y.difference_score);
+    summary.forEach((r, i) => {
+      r.rank = i + 1;
+      r.similarity_score = Math.round(100 * (1 - r.difference_score));
+      r.pct_area_keeping_zone = Math.round(100 * r.agreement_share);
+      r.pct_coverage_match = Math.round(100 * r.footprint_iou);
+      r.verdict = verdictOf(r.similarity_score).label;
+    });
+
+    setStatus('ok', `<span class="glyph">✓</span><span><span class="k">Done.</span> ${summary.length} hub${summary.length !== 1 ? 's' : ''} compared${skipped.length ? `, ${skipped.length} skipped` : ''}. Higher similarity = closer to today's zones = least disruption to roll out.</span>`);
+
+    // summary stat strip
+    const sims = summary.map(r => r.similarity_score).sort((a, b) => a - b);
+    const median = sims.length ? (sims.length % 2 ? sims[(sims.length - 1) / 2] : Math.round((sims[sims.length / 2 - 1] + sims[sims.length / 2]) / 2)) : 0;
+    const ready = summary.filter(r => r.similarity_score >= 75).length;
+    const stats = document.createElement('div');
+    stats.className = 'stats fade';
+    stats.innerHTML = `
+      <div class="stat"><div class="v">${summary.length}</div><div class="l">hubs compared</div></div>
+      <div class="stat"><div class="v">${median}<span style="font-size:15px;color:var(--ink-faint)"> / 100</span></div><div class="l">median similarity</div></div>
+      <div class="stat"><div class="v" style="color:var(--good)">${ready}</div><div class="l">low-disruption hubs (≥ 75)</div></div>
+      <div class="stat"><div class="v" style="color:var(--crit)">${summary.filter(r => r.similarity_score < 55).length}</div><div class="l">major redraws (&lt; 55)</div></div>`;
+
+    const heads = [
+      ['Rank', ''],
+      ['Hub', ''],
+      ['Similarity', '0–100. 100 = new zones identical to current, 0 = completely redrawn. Combines the two measures on the right.'],
+      ['Verdict', ''],
+      ['Area keeping its zone', 'Share of the delivery area that stays with its best-matching zone. E.g. 85% means only 15% of the ground moves to a different zone.'],
+      ['Zones', 'Number of zones: current → new'],
+      ['Coverage match', 'How much the overall service-area footprint overlaps between the two versions. Below 100% means the new zoning covers different ground.'],
+      ['Map', ''],
+    ];
+    const tbl = document.createElement('table');
+    tbl.innerHTML = '<thead><tr>' + heads.map(([h, tip], i) =>
+      `<th${i === 1 ? ' class="hub"' : ''}${tip ? ` title="${tip}"` : ''}>${h}</th>`).join('') + '</tr></thead><tbody>' +
+      summary.map(r => {
+        const v = verdictOf(r.similarity_score);
+        return `<tr>
+          <td class="num rank">${r.rank}</td>
+          <td class="hub"><span class="hubname">${escHtml(r.station_name)}</span>${r.matched_by === 'location' ? ' <span class="pin" title="Hub names differed; paired by location">◎</span>' : ''}</td>
+          <td><div class="scorecell"><span class="scoreval">${r.similarity_score}</span><span class="meter ${v.cls}"><i style="width:${r.similarity_score}%"></i></span></div></td>
+          <td style="text-align:left"><span class="chip ${v.cls}">${v.label}</span></td>
+          <td class="num">${r.pct_area_keeping_zone}%</td>
+          <td><span class="delta">${r.n_zones_current}<span class="arrow">→</span>${r.n_zones_new}</span></td>
+          <td class="num">${r.pct_coverage_match}%</td>
+          <td><button class="btn ghost mini" data-pair="${r.pairIdx}">View</button></td>
+        </tr>`;
+      }).join('') + '</tbody>';
+    const card = document.createElement('div'); card.className = 'card fade';
+    const wrap = document.createElement('div'); wrap.className = 'tablewrap'; wrap.appendChild(tbl); card.appendChild(wrap);
+    tbl.addEventListener('click', e => {
+      const b = e.target.closest('button[data-pair]');
+      if (b) showHubMaps(lastPairs[+b.dataset.pair], mapview);
+    });
+
+    const csvCols = ['rank', 'station_name', 'similarity_score', 'verdict', 'pct_area_keeping_zone',
+      'pct_coverage_match', 'n_zones_current', 'n_zones_new', 'matched_by',
+      'difference_score', 'agreement_share', 'area_ari', 'mean_best_iou', 'footprint_iou',
+      'area_current_km2', 'area_new_km2', 'zone_count_change_pct'];
+    const dl = document.createElement('div'); dl.className = 'dl';
+    dl.appendChild(dlButton('⤓ Summary CSV', toCsv(summary, csvCols), 'zone_diff_summary.csv'));
+    dl.appendChild(dlButton('⤓ Zone matches CSV',
+      toCsv(allMatches, ['station_name', 'current_zone', 'best_new_zone', 'best_iou', 'overlap_share_of_current']), 'zone_diff_matches.csv'));
+    if (skipped.length) dl.appendChild(dlButton('⤓ Skipped CSV', toCsv(skipped, ['station', 'reason']), 'zone_diff_skipped.csv'));
+
+    results.appendChild(stats);
+    results.appendChild(card);
+    results.appendChild(dl);
+    if (skipped.length) {
+      const det = document.createElement('details');
+      det.className = 'skip';
+      det.innerHTML = `<summary>${skipped.length} skipped hub(s)</summary>` +
+        '<ul>' + skipped.map(s => `<li>${escHtml(s.station)} — ${escHtml(s.reason)}</li>`).join('') + '</ul>';
+      results.appendChild(det);
+    }
+  } catch (e) {
+    setStatus('err', `<span class="glyph">✕</span><span><span class="k">Error.</span> ${escHtml(e.message || e)}</span>`);
+  }
+};
+
+// ============================ self-test ============================
+// Synthetic partitions with hand-computed expected values (grid tolerance ±0.02).
+
+document.getElementById('testBtn').onclick = () => {
+  results.innerHTML = ''; results.className = ''; mapview.innerHTML = ''; mapview.className = '';
+  const failures = [];
+  const near = (x, y, tol, what) => { if (Math.abs(x - y) > tol) failures.push(`${what}: got ${x.toFixed(4)}, expected ${y}`); };
+  const box = (x0, y0, x1, y1) => [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]];   // unclosed on purpose
+  const D = 0.01;                                              // ~1.1 km squares at the equator
+  const z = (name, rings) => ({ station: 't', zone: name, rings });
+  const halvesV = () => [z('L', box(0, 0, D / 2, D)), z('R', box(D / 2, 0, D, D))];
+  const halvesH = () => [z('B', box(0, 0, D, D / 2)), z('T', box(0, D / 2, D, D))];
+  const quarters = () => [z('q1', box(0, 0, D / 2, D / 2)), z('q2', box(0, D / 2, D / 2, D)),
+                          z('q3', box(D / 2, 0, D, D / 2)), z('q4', box(D / 2, D / 2, D, D))];
+
+  let m = compareHub(halvesV(), halvesV()).metrics;
+  near(m.difference_score, 0, 0.01, 'identical: difference_score');
+  near(m.area_ari, 1, 0.02, 'identical: area_ari');
+
+  m = compareHub(halvesV(), quarters()).metrics;
+  near(m.agreement_share, 0.75, 0.02, 'halves vs quarters: agreement_share');
+  near(m.mean_best_iou, 0.5, 0.02, 'halves vs quarters: mean_best_iou');
+  near(m.area_ari, 0.5, 0.02, 'halves vs quarters: area_ari');
+
+  m = compareHub(halvesV(), halvesH()).metrics;
+  near(m.area_ari, 0, 0.02, 'orthogonal: area_ari');
+  near(m.agreement_share, 0.5, 0.02, 'orthogonal: agreement_share');
+
+  // parsers
+  try {
+    const r1 = parseZoneJson({ station_name: 'Hub X', customized_zone_list: [
+      { zone_name: 'A-1', zone_geo_info: { type: 'Polygon', coordinates: box(0, 0, 1, 1) } }] }, 'fb');
+    if (r1[0].station !== 'Hub X' || r1[0].zone !== 'A-1') failures.push('FMS parser');
+    const r2 = parseZoneJson([{ station_name: 'Hub Z', zone_name: 'Z2',
+      zone_geo_polygon: 'POLYGON((0 0,1 0,1 1,0 1,0 0))' }], 'fb');
+    if (r2[0].station !== 'Hub Z' || r2[0].rings[0].length !== 5) failures.push('WKT records parser');
+    if (stationFromFilename('12345_Kedung Waringin Hub.geojson') !== 'Kedung Waringin Hub') failures.push('filename fallback');
+    const svg = hubSvg([{ zones: halvesV(), mode: 'fill' }, { zones: quarters(), mode: 'line' }], 640);
+    if (!svg.includes('<path') || (svg.match(/<path/g) || []).length !== 6) failures.push('map svg render');
+  } catch (e) { failures.push('parser/render threw: ' + e.message); }
+
+  if (failures.length)
+    setStatus('err', '<span class="glyph">✕</span><span><span class="k">Self-test FAILED.</span><br>' + failures.map(escHtml).join('<br>') + '</span>');
+  else {
+    setStatus('ok', '<span class="glyph">✓</span><span><span class="k">Self-test passed.</span> All metric, parser and map-render checks match their known answers. Sample maps below.</span>');
+    showHubMaps({ name: 'Self-test sample (2 halves vs 4 quarters)', cur: { zones: halvesV() }, neu: { zones: quarters() } }, mapview);
+  }
+};
+</script>
+</body>
+</html>
