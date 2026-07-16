@@ -495,6 +495,33 @@ function verdictOf(sim) {          // sim = 0..100
   return { label: 'Major redraw', cls: 'c3' };
 }
 
+// area of one zone (km²) via shoelace on hub-local meters; subtracts holes.
+// rings may be unclosed (FMS) — the modulo close handles it.
+function polyAreaKm2(rings, lat0) {
+  const kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110574;
+  const shoelace = ring => {
+    let s = 0;
+    for (let i = 0, n = ring.length; i < n; i++) {
+      const p = ring[i], q = ring[(i + 1) % n];
+      s += (p[0] * kx) * (q[1] * ky) - (q[0] * kx) * (p[1] * ky);
+    }
+    return Math.abs(s) / 2;
+  };
+  let area = rings.length ? shoelace(rings[0]) : 0;
+  for (let i = 1; i < rings.length; i++) area -= shoelace(rings[i]);   // holes
+  return Math.max(area, 0) / 1e6;
+}
+
+// avg / min / max zone area (km²) across a hub's zones
+function zoneSizeStats(zones, lat0) {
+  const areas = zones.map(z => polyAreaKm2(z.rings, lat0));
+  return {
+    avg_zone_km2: areas.reduce((a, b) => a + b, 0) / areas.length,
+    min_zone_km2: Math.min(...areas),
+    max_zone_km2: Math.max(...areas),
+  };
+}
+
 // ============================ map rendering ============================
 // Categorical zone colors: reference palette hues, cycled across zones (identity
 // is carried by the hover tooltip; color separates neighbours).
@@ -707,7 +734,8 @@ document.getElementById('runBtn').onclick = async () => {
       await new Promise(r => setTimeout(r));      // keep UI responsive
       try {
         const { metrics, matches } = compareHub(pairs[i].cur.zones, pairs[i].neu.zones);
-        summary.push({ station_name: pairs[i].name, matched_by: pairs[i].how, pairIdx: i, ...metrics });
+        const size = zoneSizeStats(pairs[i].cur.zones, pairs[i].cur.centroid[1]);   // current active driver zones
+        summary.push({ station_name: pairs[i].name, matched_by: pairs[i].how, pairIdx: i, ...metrics, ...size });
         matches.forEach(x => allMatches.push({ station_name: pairs[i].name, ...x }));
       } catch (e) {
         skipped.push({ station: pairs[i].name, reason: String(e.message || e) });
@@ -744,6 +772,7 @@ document.getElementById('runBtn').onclick = async () => {
       ['Area keeping its zone', 'Share of the delivery area that stays with its best-matching zone. E.g. 85% means only 15% of the ground moves to a different zone.'],
       ['Zones', 'Number of zones: current → new'],
       ['Coverage match', 'How much the overall service-area footprint overlaps between the two versions. Below 100% means the new zoning covers different ground.'],
+      ['Driver-zone size km²', 'Average, then smallest–largest, area of this hub\'s current active driver zones (km²).'],
       ['Map', ''],
     ];
     const tbl = document.createElement('table');
@@ -759,6 +788,7 @@ document.getElementById('runBtn').onclick = async () => {
           <td class="num">${r.pct_area_keeping_zone}%</td>
           <td><span class="delta">${r.n_zones_current}<span class="arrow">→</span>${r.n_zones_new}</span></td>
           <td class="num">${r.pct_coverage_match}%</td>
+          <td class="num">${r.avg_zone_km2.toFixed(2)} <span class="delta">(${r.min_zone_km2.toFixed(2)}–${r.max_zone_km2.toFixed(2)})</span></td>
           <td><button class="btn ghost mini" data-pair="${r.pairIdx}">View</button></td>
         </tr>`;
       }).join('') + '</tbody>';
@@ -770,7 +800,8 @@ document.getElementById('runBtn').onclick = async () => {
     });
 
     const csvCols = ['rank', 'station_name', 'similarity_score', 'verdict', 'pct_area_keeping_zone',
-      'pct_coverage_match', 'n_zones_current', 'n_zones_new', 'matched_by',
+      'pct_coverage_match', 'n_zones_current', 'n_zones_new',
+      'avg_zone_km2', 'min_zone_km2', 'max_zone_km2', 'matched_by',
       'difference_score', 'agreement_share', 'area_ari', 'mean_best_iou', 'footprint_iou',
       'area_current_km2', 'area_new_km2', 'zone_count_change_pct'];
     const dl = document.createElement('div'); dl.className = 'dl';
@@ -821,6 +852,14 @@ document.getElementById('testBtn').onclick = () => {
   m = compareHub(halvesV(), halvesH()).metrics;
   near(m.area_ari, 0, 0.02, 'orthogonal: area_ari');
   near(m.agreement_share, 0.5, 0.02, 'orthogonal: agreement_share');
+
+  // zone-size stats: two 0.005×0.01° boxes at the equator ≈ 0.6155 km² each
+  const ss = zoneSizeStats(halvesV(), 0);
+  near(ss.avg_zone_km2, 0.6155, 0.01, 'zone size: avg');
+  near(ss.min_zone_km2, 0.6155, 0.01, 'zone size: min');
+  near(ss.max_zone_km2, 0.6155, 0.01, 'zone size: max');
+  // quarters are half the area of the halves
+  near(zoneSizeStats(quarters(), 0).avg_zone_km2, 0.3077, 0.01, 'zone size: quarters avg');
 
   // parsers
   try {
